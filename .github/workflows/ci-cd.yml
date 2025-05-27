@@ -80,7 +80,7 @@ jobs:
         path: zap-report.html
       if: always()
 
-  build-and-push:
+  build-and-upload:
     needs: [lint-and-test, dast-scan]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -91,11 +91,17 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Log in to JFrog Artifactory
+    - name: Build Docker image
       run: |
-        echo "${{ secrets.ARTIFACTORY_PASSWORD }}" | docker login ${{ secrets.ARTIFACTORY_URL }} -u ${{ secrets.ARTIFACTORY_USERNAME }} --password-stdin
+        docker build -t flask-app:${{ github.sha }} .
 
-    - name: Build and push Docker image
+    - name: Save Docker image
       run: |
-        docker build -t ${{ secrets.ARTIFACTORY_URL }}/flask-app:${{ github.sha }} .
-        docker push ${{ secrets.ARTIFACTORY_URL }}/flask-app:${{ github.sha }}
+        docker save flask-app:${{ github.sha }} > flask-app.tar
+
+    - name: Upload Docker image
+      uses: actions/upload-artifact@v4
+      with:
+        name: flask-app-image
+        path: flask-app.tar
+        retention-days: 7
