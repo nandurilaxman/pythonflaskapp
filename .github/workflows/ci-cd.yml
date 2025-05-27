@@ -1,0 +1,99 @@
+name: Secure CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8 bandit pytest pytest-cov
+
+    - name: Lint with flake8
+      run: flake8 . --max-line-length=88 --extend-ignore=E203
+
+    - name: Run SAST with Bandit
+      run: bandit -r . --severity-level=medium --confidence-level=medium -f txt -o bandit-report.txt
+      continue-on-error: true
+
+    - name: Run tests with pytest
+      run: pytest --cov=./ --cov-report=xml
+
+    - name: Upload coverage report
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        token: ${{ secrets.CODECOV_TOKEN }}
+      if: success()
+
+    - name: Upload Bandit report
+      uses: actions/upload-artifact@v4
+      with:
+        name: bandit-report
+        path: bandit-report.txt
+      if: always()
+
+  dast-scan:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build and run Docker container
+      run: |
+        docker build -t flask-app .
+        docker run -d -p 5000:5000 --name flask-app flask-app
+        sleep 5  # Wait for container to start
+
+    - name: Run OWASP ZAP Baseline Scan
+      uses: zaproxy/action-baseline@v0.12.0
+      with:
+        target: 'http://localhost:5000'
+        fail_action: false
+        cmd_options: '-r zap-report.html'
+
+    - name: Upload ZAP report
+      uses: actions/upload-artifact@v4
+      with:
+        name: zap-report
+        path: zap-report.html
+      if: always()
+
+  build-and-push:
+    needs: [lint-and-test, dast-scan]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to JFrog Artifactory
+      run: |
+        echo "${{ secrets.ARTIFACTORY_PASSWORD }}" | docker login ${{ secrets.ARTIFACTORY_URL }} -u ${{ secrets.ARTIFACTORY_USERNAME }} --password-stdin
+
+    - name: Build and push Docker image
+      run: |
+        docker build -t ${{ secrets.ARTIFACTORY_URL }}/flask-app:${{ github.sha }} .
+        docker push ${{ secrets.ARTIFACTORY_URL }}/flask-app:${{ github.sha }}
