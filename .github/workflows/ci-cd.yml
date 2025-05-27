@@ -32,6 +32,8 @@ jobs:
       continue-on-error: true
 
     - name: Run tests with pytest
+      env:
+        PYTHONPATH: .
       run: pytest --cov=./ --cov-report=xml
 
     - name: Upload coverage report
