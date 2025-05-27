@@ -5,9 +5,11 @@ app = Flask(__name__)
 todos = []
 todo_id = 1
 
+
 @app.route('/todos', methods=['GET'])
 def get_todos():
     return jsonify(todos), 200
+
 
 @app.route('/todos', methods=['POST'])
 def add_todo():
@@ -20,6 +22,7 @@ def add_todo():
     todo_id += 1
     return jsonify(todo), 201
 
+
 @app.route('/todos/<int:id>', methods=['PUT'])
 def update_todo(id):
     data = request.get_json()
@@ -30,11 +33,13 @@ def update_todo(id):
             return jsonify(todo), 200
     return jsonify({"error": "Todo not found"}), 404
 
+
 @app.route('/todos/<int:id>', methods=['DELETE'])
 def delete_todo(id):
     global todos
     todos = [todo for todo in todos if todo['id'] != id]
     return jsonify({"message": "Todo deleted"}), 200
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
